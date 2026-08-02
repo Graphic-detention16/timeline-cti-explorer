@@ -1,0 +1,14 @@
+{
+  "status": "not_run",
+  "dataset_rows": 100000000,
+  "reference_hardware": {
+    "cpu_cores": 12,
+    "memory_gib": 32,
+    "storage": "1 TB 7200 RPM HDD"
+  },
+  "token_search_p95_ms": null,
+  "phrase_search_p95_ms": null,
+  "error_rate": null,
+  "claim_published": false,
+  "note": "Replace only with raw measurements from the documented 30-minute k6 run."
+}

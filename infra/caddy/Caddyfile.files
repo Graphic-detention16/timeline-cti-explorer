@@ -1,0 +1,38 @@
+{
+    admin off
+    auto_https off
+}
+
+https://{$APP_HOSTNAME}:8443 {
+    tls /run/tls/cert.pem /run/tls/key.pem
+    encode zstd gzip
+
+    redir /grafana /grafana/
+
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    handle /grafana/* {
+        reverse_proxy grafana:3000
+    }
+
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+
+    header {
+        -Server
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    }
+    @apiDocs path /api/docs
+    header @apiDocs Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    @standardCsp not path /api/docs
+    header @standardCsp Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+}

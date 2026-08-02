@@ -1,0 +1,87 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "timeline-cti-explorer"
+version = "1.0.0"
+description = "Private, explainable CTI search for an authenticated X home timeline"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Rojin Delel Dinçer" }]
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "argon2-cffi>=23.1,<26",
+  "authlib>=1.4,<2",
+  "clickhouse-connect>=0.8,<1",
+  "cryptography>=48.0.1,<49",
+  "fastapi>=0.115,<1",
+  "httpx>=0.28,<1",
+  "itsdangerous>=2.2,<3",
+  "pydantic-settings>=2.7,<3",
+  "prometheus-client>=0.21,<1",
+  "python-multipart>=0.0.20,<1",
+  "structlog>=25.1,<26",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+browser = [
+  "selenium>=4.27,<5",
+]
+ml = [
+  "huggingface-hub>=0.28,<1",
+  "numpy>=2.1,<3",
+  "onnxruntime>=1.20,<2",
+  "optimum[onnxruntime]>=1.24,<2",
+  "transformers>=4.48,<5",
+]
+dev = [
+  "bandit>=1.8,<2",
+  "httpx>=0.28,<1",
+  "mypy>=1.14,<2",
+  "pip-audit>=2.8,<3",
+  "pytest>=9.0.3,<10",
+  "pytest-asyncio>=1.4,<2",
+  "pytest-cov>=6,<7",
+  "respx>=0.22,<1",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+timeline-cti-api = "timeline_cti.api:run"
+timeline-cti-collector = "timeline_cti.collector:run"
+timeline-cti-worker = "timeline_cti.worker:run"
+timeline-cti-cli = "timeline_cti.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/timeline_cti"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["backend", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "S"]
+ignore = ["S608"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106"]
+"backend/timeline_cti/api.py" = ["B008"]
+"backend/timeline_cti/selenium_extraction.py" = ["E501"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["timeline_cti"]
+mypy_path = "backend"
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["timeline_cti"]

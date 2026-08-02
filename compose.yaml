@@ -1,0 +1,321 @@
+name: timeline-cti-explorer
+
+x-app-environment: &app-environment
+  APP_ENV: ${APP_ENV:-development}
+  APP_HOSTNAME: ${APP_HOSTNAME:-localhost}
+  HTTPS_PORT: ${HTTPS_PORT:-8443}
+  DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en}
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://${APP_HOSTNAME:-localhost}:${HTTPS_PORT:-8443}}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?set ADMIN_PASSWORD_HASH in .env}
+  SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+  TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set TOKEN_ENCRYPTION_KEY in .env}
+  API_KEY_SHA256: ${API_KEY_SHA256:?set API_KEY_SHA256 in .env}
+  SESSION_MAX_AGE_SECONDS: ${SESSION_MAX_AGE_SECONDS:-43200}
+  CLICKHOUSE_HOST: clickhouse
+  CLICKHOUSE_PORT: 8123
+  CLICKHOUSE_SECURE: "false"
+  CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-timeline_cti}
+  CLICKHOUSE_API_USER: ${CLICKHOUSE_API_USER:-api_ro}
+  CLICKHOUSE_API_PASSWORD: ${CLICKHOUSE_API_PASSWORD:?set CLICKHOUSE_API_PASSWORD in .env}
+  CLICKHOUSE_INGEST_USER: ${CLICKHOUSE_INGEST_USER:-ingest_rw}
+  CLICKHOUSE_INGEST_PASSWORD: ${CLICKHOUSE_INGEST_PASSWORD:?set CLICKHOUSE_INGEST_PASSWORD in .env}
+  QUERY_TIMEOUT_SECONDS: ${QUERY_TIMEOUT_SECONDS:-5}
+  STATE_DATABASE_PATH: ${STATE_DATABASE_PATH:-/var/lib/timeline-cti/state.db}
+  SPOOL_MAX_BYTES: ${SPOOL_MAX_BYTES:-536870912}
+  X_CLIENT_ID: ${X_CLIENT_ID:-}
+  X_CLIENT_SECRET: ${X_CLIENT_SECRET:-}
+  X_BEARER_TOKEN: ${X_BEARER_TOKEN:-}
+  X_REDIRECT_URI: ${X_REDIRECT_URI:-https://${APP_HOSTNAME:-localhost}:${HTTPS_PORT:-8443}/api/v1/auth/x/callback}
+  X_POLL_SECONDS: ${X_POLL_SECONDS:-60}
+  X_DAILY_READ_BUDGET: ${X_DAILY_READ_BUDGET:-10000}
+  X_USE_CASE_APPROVED: ${X_USE_CASE_APPROVED:-false}
+  COLLECTOR_BACKEND: ${COLLECTOR_BACKEND:-selenium}
+  SELENIUM_REMOTE_URL: ${SELENIUM_REMOTE_URL:-http://browser:4444/wd/hub}
+  SELENIUM_SCROLL_SECONDS: ${SELENIUM_SCROLL_SECONDS:-600}
+  SELENIUM_IDLE_SECONDS: ${SELENIUM_IDLE_SECONDS:-3600}
+  SELENIUM_IDLE_JITTER_SECONDS: ${SELENIUM_IDLE_JITTER_SECONDS:-120}
+  SELENIUM_SEEN_RETENTION_DAYS: ${SELENIUM_SEEN_RETENTION_DAYS:-30}
+  SELENIUM_LOCALE: ${SELENIUM_LOCALE:-tr-TR}
+  SELENIUM_TIMEZONE: ${SELENIUM_TIMEZONE:-Europe/Istanbul}
+  CTI_MEDIUM_THRESHOLD: ${CTI_MEDIUM_THRESHOLD:-40}
+  CTI_HIGH_THRESHOLD: ${CTI_HIGH_THRESHOLD:-70}
+  CTI_CRITICAL_THRESHOLD: ${CTI_CRITICAL_THRESHOLD:-85}
+  CTI_TRUSTED_HANDLES: ${CTI_TRUSTED_HANDLES:-}
+  CTI_MODEL_PATH: ${CTI_MODEL_PATH:-/models/cti}
+  CTI_MODEL_ID: ${CTI_MODEL_ID:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+  CTI_MODEL_REVISION: ${CTI_MODEL_REVISION:-e62509716f15c5fd03a6fd3156a4bc5e43f83f26}
+  CTI_MODEL_SHA256: ${CTI_MODEL_SHA256:-}
+  CTI_MODEL_BATCH_SIZE: ${CTI_MODEL_BATCH_SIZE:-16}
+  BACKUP_TARGET: /backups
+
+x-app-security: &app-security
+  read_only: true
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  caddy:
+    build:
+      context: .
+      dockerfile: infra/caddy/Dockerfile
+    environment:
+      APP_HOSTNAME: ${APP_HOSTNAME:-localhost}
+    ports:
+      - "${HTTPS_PORT:-8443}:8443"
+    volumes:
+      - ./infra/caddy/Caddyfile.${TLS_MODE:-internal}:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ${TLS_CERT_FILE:-./infra/caddy/empty.crt}:/run/tls/cert.pem:ro
+      - ${TLS_KEY_FILE:-./infra/caddy/empty.key}:/run/tls/key.pem:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [edge, app, observability]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  api:
+    build:
+      context: .
+      target: api
+    environment: *app-environment
+    volumes:
+      - app_state:/var/lib/timeline-cti
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      schema-init:
+        condition: service_completed_successfully
+    networks: [app, data, observability]
+    <<: *app-security
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=2)"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  collector:
+    build:
+      context: .
+      target: collector
+    environment: *app-environment
+    volumes:
+      - app_state:/var/lib/timeline-cti
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      schema-init:
+        condition: service_completed_successfully
+      browser:
+        condition: service_healthy
+    networks: [app, data, egress]
+    <<: *app-security
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    mem_limit: 512m
+    cpus: 0.5
+
+  browser:
+    image: selenium/standalone-chromium:4.46.0-20260707@sha256:3400b92f1cddb2dfaaf358654e8f7d83d7be45192fb73c5f28c25faa28d36504
+    shm_size: 2gb
+    networks: [egress, app]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:4444/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      target: worker
+    environment: *app-environment
+    volumes:
+      - app_state:/var/lib/timeline-cti
+      - model_data:/models:ro
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      schema-init:
+        condition: service_completed_successfully
+    networks: [data]
+    <<: *app-security
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=512m"]
+    mem_limit: 5g
+    cpus: 2.0
+
+  model-init:
+    profiles: ["ml"]
+    build:
+      context: .
+      target: model-init
+    environment: *app-environment
+    volumes:
+      - model_data:/models
+    networks: [app]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=1g"]
+    restart: "no"
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.6.2.81@sha256:fdc22372465a336fa47e9deab61fad8277b9e2f2473234a1294b33b53f01d377
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-timeline_cti}
+      CLICKHOUSE_USER: ${CLICKHOUSE_ADMIN_USER:-admin}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:?set CLICKHOUSE_ADMIN_PASSWORD in .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      CLICKHOUSE_API_PASSWORD_SHA256: ${CLICKHOUSE_API_PASSWORD_SHA256:?set CLICKHOUSE_API_PASSWORD_SHA256 in .env}
+      CLICKHOUSE_INGEST_PASSWORD_SHA256: ${CLICKHOUSE_INGEST_PASSWORD_SHA256:?set CLICKHOUSE_INGEST_PASSWORD_SHA256 in .env}
+      CLICKHOUSE_API_GRANT: GRANT SELECT ON ${CLICKHOUSE_DATABASE:-timeline_cti}.*
+      CLICKHOUSE_INGEST_GRANT: GRANT SELECT, INSERT, ALTER DELETE ON ${CLICKHOUSE_DATABASE:-timeline_cti}.*
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+      - ${BACKUP_TARGET:-./backups}:/backups
+      - ./infra/clickhouse/users.xml:/etc/clickhouse-server/users.d/timeline-cti.xml:ro
+      - ./infra/clickhouse/backup.xml:/etc/clickhouse-server/config.d/backup.xml:ro
+      - ./infra/clickhouse/init:/docker-entrypoint-initdb.d:ro
+    networks: [data]
+    cap_drop: ["ALL"]
+    # Resmî entrypoint named volume sahipliğini düzeltip clickhouse kullanıcısına geçer.
+    # CHOWN/SETUID/SETGID yalnız bu başlangıç işlemi için geri eklenir.
+    cap_add: ["CHOWN", "SETUID", "SETGID", "SYS_NICE", "IPC_LOCK"]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    mem_limit: ${CLICKHOUSE_MEMORY_LIMIT:-20g}
+    cpus: 8.0
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user \"$${CLICKHOUSE_USER}\" --password \"$${CLICKHOUSE_PASSWORD}\" --query 'SELECT 1' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  schema-init:
+    image: clickhouse/clickhouse-server:26.6.2.81@sha256:fdc22372465a336fa47e9deab61fad8277b9e2f2473234a1294b33b53f01d377
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        clickhouse-client
+        --host "$$CLICKHOUSE_HOST"
+        --user "$$CLICKHOUSE_USER"
+        --password "$$CLICKHOUSE_PASSWORD"
+        --database "$$CLICKHOUSE_DB"
+        --multiquery
+        < /schema/01_schema.sql
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-timeline_cti}
+      CLICKHOUSE_USER: ${CLICKHOUSE_ADMIN_USER:-admin}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:?set CLICKHOUSE_ADMIN_PASSWORD in .env}
+    volumes:
+      - ./infra/clickhouse/init/01_schema.sql:/schema/01_schema.sql:ro
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    networks: [data]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    restart: "no"
+
+  benchmark:
+    profiles: ["benchmark"]
+    build:
+      context: .
+      target: benchmark
+    environment: *app-environment
+    networks: [data]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      schema-init:
+        condition: service_completed_successfully
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    restart: "no"
+
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=15d"]
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks: [observability]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:13.1.0@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_SERVER_ROOT_URL: https://${APP_HOSTNAME:-localhost}:${HTTPS_PORT:-8443}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks: [observability]
+    depends_on:
+      prometheus:
+        condition: service_started
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    restart: unless-stopped
+
+networks:
+  edge: {}
+  app:
+    internal: true
+  data:
+    internal: true
+  observability:
+    internal: true
+  egress: {}
+
+volumes:
+  app_state: {}
+  model_data: {}
+  clickhouse_data: {}
+  clickhouse_logs: {}
+  caddy_data: {}
+  caddy_config: {}
+  prometheus_data: {}
+  grafana_data: {}

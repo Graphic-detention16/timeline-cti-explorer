@@ -1,0 +1,10 @@
+Timeline CTI Explorer
+Copyright 2026 Rojin Delel Dinçer
+
+This product includes optional support for the Apache-2.0 licensed
+sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 model. The model is
+downloaded separately and is not included in this source distribution.
+
+This project is independent and is not affiliated with, endorsed by, or
+sponsored by X Corp. X and Twitter are trademarks of their respective owner.
+
